@@ -1,0 +1,133 @@
+---
+title: "Practical Machine Learning Project - Human Activity Recognition"
+author: "Anu Gudipati"
+date: "Satyrday, July 25, 2015"
+output: html_document
+---
+
+##Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+The training data for this project are available here:https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+##Download the data files. 
+
+To make it Reproducable, check and create data folder then check and download the files.
+
+```{r results='hide'}
+
+library(caret)
+library(ggplot2)
+library(Hmisc)
+library(randomForest)
+
+trainingFile <- "./data/pml-training.csv"
+CrossValFile  <- "./data/pml-CV.csv"
+
+if (!file.exists("./data")) {   dir.create("./data") }
+
+if (!file.exists(trainingFile)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile=trainingFile, method="internal")
+}
+
+if (!file.exists(CrossValFile)) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile=CrossValFile, method="internal")
+}
+
+#Read the data into data tables
+trainingRawData<-read.csv(trainingFile)
+CrossValRawData<-read.csv(CrossValFile)
+
+```
+
+##Cleanse Data (Both Training and Cross Validation data sets)
+
+Remove the most common invalid data, which is NAs, Empty strings etc. Convert other missing data to NA and remove the columns that have NAs
+
+```{r, results='hide'}
+
+trainingPPData<-trainingRawData[,-(grep("timestamp|window",names(trainingRawData)))]
+CrossValPPData<-CrossValRawData[,-(grep("timestamp|window",names(CrossValRawData)))]
+
+trainingPPData<-trainingPPData[,-c(1,2)]
+CrossValPPData<-CrossValPPData[,-c(1,2)]
+
+#If you look at summary of the dataset, some columns have non-numeric values such as Empty string, #DIV/0 etc. Let's remove them as they may not add any value
+trainingPPData<-trainingPPData[, sapply(trainingPPData, is.numeric)]
+CrossValPPData<-CrossValPPData[, sapply(CrossValPPData, is.numeric)]
+
+#If you look at summary of the dataset, some columns such as  have 90% NAs. Lets remove them as they may not add any value
+trainingPPData <- trainingPPData[, colSums(is.na(trainingPPData))*100/nrow(trainingPPData) < 50] 
+CrossValPPData <- CrossValPPData[, colSums(is.na(CrossValPPData))*100/nrow(CrossValPPData) < 50] 
+
+trainingPPData$classe <- trainingRawData$classe
+CrossValPPData$classe <- CrossValRawData$classe
+
+dim(trainingPPData)
+dim(CrossValPPData)
+
+```
+
+##Slicing the data 
+
+Use 80/20 rule. 
+
+```{r, results='hide'}
+
+inTrain<-createDataPartition(y=trainingPPData$classe, p=.8, list=FALSE)
+training<-trainingPPData[inTrain,]
+testing<-trainingPPData[-inTrain,]
+
+dim(training)
+dim(testing)
+
+```
+
+##Fit the model
+
+As per the recommendation of the authors of this source, selecting randomForest algorithm. 
+
+```{r, results='hide'}
+
+tc <- trainControl(method="cv", 5)
+modelFit <- train(classe ~ ., data=training, method="rf", trControl=tc, ntree=250)
+modelFit
+
+#As you see the output of the Trained Model, the accuracy of the fit is .9935. Lets now validate using Confusion matrix
+ValPred <- predict(modelFit, testing)
+ConfMat<-confusionMatrix(testing$classe, ValPred)
+
+#find the Accuracy
+accuracy<-ConfMat$overall[1]
+
+#Now find expected out of sample error 
+expected_outof_sample_error<-1-accuracy
+expected_outof_sample_error
+
+```
+
+I was expecting the out of sample error under 0.5 and as you see it is <0.5
+
+## Predict mistakes form the given  Cross Validation data set 
+
+```{r}
+
+result <- predict(modelFit, CrossValPPData)
+result
+
+#Write the results to a file
+# pml_write_files = function(x){
+#   n = length(x)
+#   for(i in 1:n){
+#     filename = paste0("problem_id_",i,".txt")
+#     write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+#   }
+# }
+# 
+# pml_write_files(result)
+
+```
+
